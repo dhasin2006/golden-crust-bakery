@@ -1,0 +1,6 @@
+{
+  "name": "Golden Crust Boutique",
+  "description": "Premium French-inspired artisanal bakery and pâtisserie featuring handcrafted sourdough, luxury cakes, pastries, and bespoke creations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

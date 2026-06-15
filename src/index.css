@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Poppins:wght@300;400;500;600;700&display=swap');
+
+@theme {
+  --color-primary: #6f4627;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #8b5e3c;
+  --color-on-primary-container: #ffe3d1;
+  --color-inverse-primary: #f4bb92;
+  --color-secondary: #735c00;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #fed65b;
+  --color-on-secondary-container: #745c00;
+  --color-tertiary: #67493c;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #816153;
+  --color-on-tertiary-container: #ffe2d6;
+  --color-background: #fff8f1;
+  --color-on-background: #1e1b17;
+  --color-surface: #fff8f1;
+  --color-surface-dim: #dfd9d1;
+  --color-surface-bright: #fff8f1;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f9f3eb;
+  --color-surface-container: #f4ede5;
+  --color-surface-container-high: #eee7df;
+  --color-surface-container-highest: #e8e1da;
+  --color-on-surface: #1e1b17;
+  --color-on-surface-variant: #51443c;
+  --color-inverse-surface: #33302b;
+  --color-inverse-on-surface: #f7f0e8;
+  --color-outline: #83746b;
+  --color-outline-variant: #d5c3b8;
+  --color-surface-tint: #805533;
+  
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+}
+
+/* Custom scrollbar and glass effects */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fff8f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #d5c3b8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #83746b;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+  overflow-x: hidden;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Custom Culinary Cursors representing the high artisan baking aesthetics */
+.cursor-croissant-hover:hover {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="font-size:24px"><text y="24">🥐</text></svg>') 8 8, pointer;
+}
+
+.cursor-cake-hover:hover {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="font-size:24px"><text y="24">🎂</text></svg>') 8 8, pointer;
+}
+
+.cursor-sparkle-hover:hover {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="font-size:24px"><text y="24">✨</text></svg>') 8 8, pointer;
+}
+
+.cursor-wheat-hover:hover {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="font-size:24px"><text y="24">🌾</text></svg>') 8 8, pointer;
+}
+
+.cursor-story-hover:hover {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" style="font-size:24px"><text y="24">📜</text></svg>') 8 8, pointer;
+}
+
+
