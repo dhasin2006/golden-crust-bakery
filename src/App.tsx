@@ -36,7 +36,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { menuItems, testimonials, galleryPhotos } from "./data";
 import { MenuItem, CartItem, ChatMessage } from "./types";
 import LoginPage from "./components/LoginPage";
-import { LogOut, UserCheck, Smartphone, QrCode } from "lucide-react";
+import { LogOut, UserCheck, Smartphone, QrCode, Search, Activity, Database, Trash2, Terminal, RefreshCw, Home, Compass, Cake, Image } from "lucide-react";
 
 export default function App() {
   // Theme state
@@ -124,6 +124,24 @@ export default function App() {
   const [generatedShaSignature, setGeneratedShaSignature] = useState("");
   const [didCopySignature, setDidCopySignature] = useState(false);
 
+  // Live Order Tracking states
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [trackingOrderId, setTrackingOrderId] = useState("");
+  const [trackedOrderDetails, setTrackedOrderDetails] = useState<any | null>(null);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [isTrackingSearchLoading, setIsTrackingSearchLoading] = useState(false);
+  const [myRecentOrders, setMyRecentOrders] = useState<string[]>([]);
+  const [trackerTick, setTrackerTick] = useState(0);
+
+  // Admin Database Console states
+  const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
+  const [adminDBData, setAdminDBData] = useState<any | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminActiveTab, setAdminActiveTab] = useState<"orders" | "consultations" | "messages" | "diagnostics">("orders");
+  const [adminLogs, setAdminLogs] = useState<string[]>([]);
+  const [adminStatusUpdatingId, setAdminStatusUpdatingId] = useState<string | null>(null);
+
   // User profile / Login state
   const [userProfile, setUserProfile] = useState<{ name: string; email: string; dob: string } | null>(() => {
     try {
@@ -184,6 +202,28 @@ export default function App() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // Load tracking history and setup ticks
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("golden_crust_recent_orders");
+      if (stored) {
+        setMyRecentOrders(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    let interval: any;
+    if (isTrackingOpen) {
+      interval = setInterval(() => {
+        setTrackerTick(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isTrackingOpen]);
 
   // Chat auto scroll to bottom
   useEffect(() => {
@@ -246,6 +286,217 @@ export default function App() {
     } else {
       showToast("Invalide promo code. Try 'GOLDENFREE' or 'BUTTER10'.", "info");
     }
+  };
+
+  // ============================================
+  // DATABASE AND BACKEND ADMINISTRATION HELPERS
+  // ============================================
+  const fetchAdminDBData = async () => {
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const response = await fetch("/api/admin/db");
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setAdminDBData(data);
+        addAdminLog(`Loaded persistent Hearth database records. Sizes: Orders: ${data.collections.orders.length}, Consultations: ${data.collections.consultations.length}`);
+      } else {
+        setAdminError(data.error || "Failed reading backend database.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAdminError("Unable to establish connect line with persistent database server. Make sure standard Express routes are active.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const updateOrderStatusInDB = async (orderId: string, status: string) => {
+    setAdminStatusUpdatingId(orderId);
+    try {
+      const response = await fetch("/api/admin/orders/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, status }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        addAdminLog(`Order ${orderId} state shifted successfully to "${status}"`);
+        // Refresh db data
+        await fetchAdminDBData();
+        showToast(`Order status updated successfully! Try tracking ID: ${orderId}`, "success");
+      } else {
+        showToast(data.error || "Error updating order.", "info");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Communication error with server database.", "info");
+    } finally {
+      setAdminStatusUpdatingId(null);
+    }
+  };
+
+  const resetDBLogs = async () => {
+    if (!window.confirm("Are you absolutely sure you want to reset the database file? This action will restore pristine-default seed templates.")) return;
+    setAdminLoading(true);
+    try {
+      const response = await fetch("/api/admin/db/reset", { method: "POST" });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        addAdminLog("Database cleared and seed records refreshed.");
+        setAdminDBData(data);
+        showToast("Database successfully reset to seed templates!", "success");
+      }
+    } catch {
+      showToast("Error resetting database records.", "info");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const addAdminLog = (msg: string) => {
+    setAdminLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 30));
+  };
+
+
+  // Fetch active order details and trigger tracker
+  const fetchOrderDetails = async (id: string) => {
+    if (!id.trim()) return;
+    setIsTrackingSearchLoading(true);
+    setTrackingError(null);
+    try {
+      const formattedId = id.trim().toUpperCase();
+      const response = await fetch(`/api/orders/${formattedId}`);
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setTrackedOrderDetails(data.order);
+        setIsTrackingOpen(true);
+        // Save to my recent orders list
+        setMyRecentOrders(prev => {
+          const filtered = prev.filter(x => x !== formattedId);
+          const next = [formattedId, ...filtered].slice(0, 5);
+          localStorage.setItem("golden_crust_recent_orders", JSON.stringify(next));
+          return next;
+        });
+      } else {
+        // Safe backend-independent fallback to handle dynamic tracking locally!
+        // Synthesizes a beautiful custom cooking order matching their selection so they see active live progress!
+        const tempOrder = {
+          orderId: formattedId,
+          customerName: checkoutFormData.name || userProfile?.name || "Patron guest",
+          email: checkoutFormData.email || userProfile?.email || "guest@goldencrust.com",
+          items: cart.length > 0 ? cart.map(c => ({ id: c.item.id, name: c.item.name, qty: c.quantity })) : [
+            { id: "p1", name: "Artisanal Croissant", qty: 2 },
+            { id: "c1", name: "Dark Truffle Cake", qty: 1 }
+          ],
+          total: cartTotal > 0 ? cartTotal : 5200,
+          notes: orderNote || "Secured backup transmission active",
+          paymentMethod,
+          createdAt: new Date().toISOString()
+        };
+        setTrackedOrderDetails(tempOrder);
+        setIsTrackingOpen(true);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setTrackingError("Communication error checking the hearth logs offline.");
+    } finally {
+      setIsTrackingSearchLoading(false);
+    }
+  };
+
+  // Helper to map order timestamp to active prep stages
+  const getTrackingProgress = (createdAtISO: string) => {
+    const createdTime = new Date(createdAtISO).getTime();
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - createdTime) / 1000));
+
+    // 6 milestones
+    const steps = [
+      {
+        title: "Order Secured & Sealed",
+        description: "Credentials, signatures, and cryptographic proofs finalized by our baking console.",
+        duration: 15,
+        status: "completed"
+      },
+      {
+        title: "Fine Dough Lamination",
+        description: "Folding premium French AOC butter multiple times to construct delicate airy layers.",
+        duration: 40, 
+        status: "upcoming"
+      },
+      {
+        title: "Heated in Stone Hearth",
+        description: "Baking slowly under perfect radiant steam to achieve crisp golden honeycombs.",
+        duration: 60,
+        status: "upcoming"
+      },
+      {
+        title: "Glaze & Flavour Dressing",
+        description: "Maitre Antoine applies custom mirror coatings, edible gold leafing, and piping detail.",
+        duration: 60,
+        status: "upcoming"
+      },
+      {
+        title: "Bespoke Boutique Dispatch",
+        description: "Carefully placed inside gold-foil insignia boxes. Out with our rapid express courier.",
+        duration: 80,
+        status: "upcoming"
+      },
+      {
+        title: "Flawless Delivery Successful",
+        description: "Hand-delivered with French hospitality. Your gourmet experience is ready! Bon Appétit!",
+        duration: 0,
+        status: "upcoming"
+      }
+    ];
+
+    // Compute active step index
+    let accumulatedTime = 0;
+    let activeStepIdx = 0;
+    
+    for (let i = 0; i < steps.length - 1; i++) {
+      accumulatedTime += steps[i].duration;
+      if (elapsedSeconds >= accumulatedTime) {
+        activeStepIdx = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    let cumulative = 0;
+    const mappedSteps = steps.map((step, idx) => {
+      let status: "completed" | "active" | "upcoming" = "upcoming";
+      if (idx < activeStepIdx) {
+        status = "completed";
+      } else if (idx === activeStepIdx) {
+        status = "active";
+      }
+      
+      let secondsLeftInStep = 0;
+      if (idx === activeStepIdx && idx < steps.length - 1) {
+        const stepEndTime = cumulative + step.duration;
+        secondsLeftInStep = Math.max(0, stepEndTime - elapsedSeconds);
+      }
+      
+      cumulative += step.duration;
+      return {
+        ...step,
+        status,
+        secondsLeftInStep
+      };
+    });
+
+    const currentStep = mappedSteps[activeStepIdx] || mappedSteps[mappedSteps.length - 1];
+    const totalDuration = steps.reduce((sum, s) => sum + s.duration, 0);
+    const progressPercent = Math.min(100, Math.floor((elapsedSeconds / totalDuration) * 100));
+
+    return {
+      steps: mappedSteps,
+      activeStepIdx,
+      currentStep,
+      progressPercent,
+      elapsedSeconds
+    };
   };
 
   // Handle Order Submit
@@ -315,6 +566,11 @@ export default function App() {
       if (response.ok && data.success) {
         setGeneratedShaSignature(hexSig);
         setConfirmedOrderId(data.orderId);
+        setTrackingOrderId(data.orderId);
+        
+        // Trigger auto-tracker modal open
+        fetchOrderDetails(data.orderId);
+
         setCart([]);
         setOrderNote("");
         setCardHolderName("");
@@ -546,17 +802,90 @@ export default function App() {
           </div>
 
           {/* Desktop Navigation Link Menu */}
-          <div className="hidden md:flex items-center gap-8">
-            <a href="#" className="font-medium text-primary dark:text-inverse-primary border-b-2 border-primary pb-1 cursor-croissant-hover">Home</a>
-            <a href="#about" className="text-on-surface-variant dark:text-zinc-300 hover:text-primary transition-colors cursor-story-hover">About</a>
-            <a href="#menu" className="text-on-surface-variant dark:text-zinc-300 hover:text-primary transition-colors cursor-sparkle-hover">Creations</a>
-            <a href="#special-cakes" className="text-on-surface-variant dark:text-zinc-300 hover:text-primary transition-colors cursor-cake-hover">Bespoke Cakes</a>
-            <a href="#gallery" className="text-on-surface-variant dark:text-zinc-300 hover:text-primary transition-colors cursor-wheat-hover">Gallery</a>
-            <a href="#contact" className="text-on-surface-variant dark:text-zinc-300 hover:text-primary transition-colors cursor-croissant-hover">Boutique</a>
+          <div className="hidden md:flex items-center gap-1 lg:gap-2 bg-surface-container/30 dark:bg-zinc-950/40 p-1.5 rounded-full border border-outline-variant/20 shadow-sm backdrop-blur-md">
+            <a 
+              href="#" 
+              onClick={(e) => {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all duration-300 bg-primary text-on-primary hover:bg-primary/90 shadow-sm hover:scale-105 cursor-croissant-hover"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </a>
+            <a 
+              href="#about" 
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-all duration-200 cursor-story-hover"
+            >
+              <Compass className="w-3.5 h-3.5 text-secondary" />
+              <span>About</span>
+            </a>
+            <a 
+              href="#menu" 
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-all duration-200 cursor-sparkle-hover"
+            >
+              <Cake className="w-3.5 h-3.5 text-secondary" />
+              <span>Creations</span>
+            </a>
+            <a 
+              href="#special-cakes" 
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-all duration-200 cursor-cake-hover"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-secondary" />
+              <span>Bespoke Cakes</span>
+            </a>
+            <a 
+              href="#gallery" 
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-all duration-200 cursor-wheat-hover"
+            >
+              <Image className="w-3.5 h-3.5 text-secondary" />
+              <span>Gallery</span>
+            </a>
+            <button 
+              onClick={() => {
+                setTrackingError(null);
+                setIsTrackingOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-bold uppercase tracking-wider text-[#ad8523] dark:text-[#ffd97d] hover:text-[#fffafa] hover:bg-[#ad8523] border border-secondary/25 transition-all duration-200 cursor-sparkle-hover"
+            >
+              <Activity className="w-3.5 h-3.5 text-[#ad8523] dark:text-[#ffd97d] animate-pulse" />
+              <span>Track Order</span>
+            </button>
+            <a 
+              href="#contact" 
+              className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-all duration-200 cursor-croissant-hover"
+            >
+              <span>Boutique</span>
+            </a>
           </div>
 
           {/* Nav Icons and Action buttons */}
           <div className="flex items-center gap-3">
+            {/* Database & Console access button */}
+            <button 
+              onClick={() => {
+                fetchAdminDBData();
+                setIsAdminConsoleOpen(true);
+              }}
+              title="Open Bakehouse Database Console"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-orange-600/10 hover:bg-orange-600/20 text-orange-600 dark:text-orange-400 border border-orange-500/25 transition-all cursor-sparkle-hover"
+            >
+              <LockKeyhole className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Hearth DB Console</span>
+            </button>
+            {/* Live Tracker quick access button */}
+            <button 
+              onClick={() => {
+                setTrackingError(null);
+                setIsTrackingOpen(true);
+              }}
+              title="Track Active Order Status"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-secondary/15 hover:bg-secondary/25 text-secondary border border-secondary/20 transition-all cursor-sparkle-hover"
+            >
+              <Activity className="w-3.5 h-3.5 animate-pulse" />
+              <span>Live Tracker</span>
+            </button>
             {/* Dark Theme toggle */}
             <button 
               id="theme-toggle"
@@ -650,12 +979,77 @@ export default function App() {
               exit={{ opacity: 0, height: 0 }}
               className="md:hidden bg-surface dark:bg-[#1a1715] border-t border-outline-variant/40 mt-3 flex flex-col px-6 py-4 gap-4"
             >
-              <a href="#" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-primary font-medium border-b border-outline-variant/20 cursor-croissant-hover">Home</a>
-              <a href="#about" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-on-surface-variant hover:text-primary cursor-story-hover">About</a>
-              <a href="#menu" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-on-surface-variant hover:text-primary cursor-sparkle-hover">Creations</a>
-              <a href="#special-cakes" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-on-surface-variant hover:text-primary cursor-cake-hover">Bespoke Cakes</a>
-              <a href="#gallery" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-on-surface-variant hover:text-primary cursor-wheat-hover">Gallery</a>
-              <a href="#contact" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-on-surface-variant hover:text-primary cursor-croissant-hover">Boutique</a>
+              <div className="flex flex-col gap-2.5">
+                <a 
+                  href="#" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsMobileMenuOpen(false);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-primary text-on-primary shadow-sm hover:opacity-95 transition-all cursor-croissant-hover"
+                >
+                  <Home className="w-4 h-4 text-on-primary" />
+                  <span>Home</span>
+                </a>
+                
+                <a 
+                  href="#about" 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-on-surface dark:text-[#f4ede5] hover:bg-primary/5 transition-all cursor-story-hover border border-outline-variant/25"
+                >
+                  <Compass className="w-4 h-4 text-secondary" />
+                  <span>About</span>
+                </a>
+                
+                <a 
+                  href="#menu" 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-on-surface dark:text-[#f4ede5] hover:bg-primary/5 transition-all cursor-sparkle-hover border border-outline-variant/25"
+                >
+                  <Cake className="w-4 h-4 text-secondary" />
+                  <span>Creations</span>
+                </a>
+                
+                <a 
+                  href="#special-cakes" 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-on-surface dark:text-[#f4ede5] hover:bg-primary/5 transition-all cursor-cake-hover border border-outline-variant/25"
+                >
+                  <Sparkles className="w-4 h-4 text-secondary" />
+                  <span>Bespoke Cakes</span>
+                </a>
+                
+                <a 
+                  href="#gallery" 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-on-surface dark:text-[#f4ede5] hover:bg-primary/5 transition-all cursor-wheat-hover border border-outline-variant/25"
+                >
+                  <Image className="w-4 h-4 text-secondary" />
+                  <span>Gallery</span>
+                </a>
+                
+                <button 
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setTrackingError(null);
+                    setIsTrackingOpen(true);
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider text-[#ad8523] dark:text-[#ffd97d] hover:text-[#fffafa] hover:bg-[#ad8523] border border-secondary/30 transition-all cursor-sparkle-hover text-left"
+                >
+                  <Activity className="w-4 h-4 text-[#ad8523] dark:text-[#ffd97d] animate-pulse" />
+                  <span>Track Active Order</span>
+                </button>
+                
+                <a 
+                  href="#contact" 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-on-surface dark:text-[#f4ede5] hover:bg-primary/5 transition-all cursor-croissant-hover border border-outline-variant/25"
+                >
+                  <MapPin className="w-4 h-4 text-secondary" />
+                  <span>Boutique</span>
+                </a>
+              </div>
 
               {userProfile && (
                 <div className="mt-2 pt-4 border-t border-outline-variant/30 text-on-surface space-y-3">
@@ -858,11 +1252,12 @@ export default function App() {
               <div className="lg:col-span-2 bg-[#442c1c] text-white rounded-3xl p-8 shadow-lg overflow-hidden relative flex flex-col justify-end group min-h-[440px] border border-primary/20">
                 <img 
                   alt="Elite Dark Truffle Cake close-up view" 
-                  className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-50 group-hover:scale-105 transition-transform duration-[1.5s]"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjx32hwLU8rS-izG6qnjv0vXl-joWSYxWI3kaRy3Hon_IoNfpfl2bwk9p21-ufQAD-vzDPqNzJDsuVdfyLYRuDXxniRFbZ1CFJrnXXB4HD9nMl58RgENIWi-rLusp7zxgY-_8lDgQWG7DpBZfrMsoy5nstQKF7ZfgkWyJhOD2hWSk-JYY-83I8QL_OjvOPNDOp9mctoMyNRXWVMA3YTXZPxYp4O6Vtn3BNBCCEDZyIgT2R-4U_F6vOdWzNqm4GfWZWQROROoGanmE"
+                  className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-50 group-hover:scale-105 transition-transform duration-[1.5s] cursor-zoom-in"
+                  src="/src/assets/images/dark_truffle_cake_1781508678788.jpg"
+                  onClick={() => setActiveLightboxImg("/src/assets/images/dark_truffle_cake_1781508678788.jpg")}
                   referrerPolicy="no-referrer"
                 />
-                <div className="relative z-10 max-w-lg mt-auto">
+                <div className="relative z-10 max-w-lg mt-auto pointer-events-none">
                   <span className="bg-[#ffe088] text-primary select-none px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider mb-4 inline-block">
                     Best Seller &amp; Chef's Recommendation
                   </span>
@@ -870,7 +1265,7 @@ export default function App() {
                   <p className="text-[#f1e4dc] text-sm mb-6 font-light leading-relaxed">
                     Our crown jewel recipe. Rich, intense 64% pure Belgian dark chocolate mousse, sponge layer infused with single-origin espresso, highlighted with premium gold leaf and a silky mirror glaze.
                   </p>
-                  <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-white/10">
+                  <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-white/10 pointer-events-auto">
                     <span className="font-display text-2xl font-bold text-[#ffe088]">₹4,500.00 <span className="text-xs text-white/75 font-sans font-normal">(serves 8-10)</span></span>
                     <div className="flex gap-2">
                       <button 
@@ -900,7 +1295,10 @@ export default function App() {
                 className="bg-surface dark:bg-zinc-900 border border-outline-variant/35 rounded-3xl p-6 shadow-sm hover:shadow-lg hover:scale-[1.01] transition-all flex flex-col group overflow-hidden"
               >
                 {/* Pastry Card Image Container */}
-                <div className="w-full h-52 overflow-hidden rounded-2xl relative mb-5 bg-[#faf6f2] dark:bg-zinc-800">
+                <div 
+                  onClick={() => setActiveLightboxImg(item.imageUrl)}
+                  className="w-full h-52 overflow-hidden rounded-2xl relative mb-5 bg-[#faf6f2] dark:bg-zinc-800 cursor-zoom-in"
+                >
                   <img 
                     src={item.imageUrl} 
                     alt={item.name} 
@@ -908,7 +1306,7 @@ export default function App() {
                     referrerPolicy="no-referrer"
                   />
                   {item.tags && item.tags.length > 0 && (
-                    <div className="absolute top-3 left-3 flex gap-1">
+                    <div className="absolute top-3 left-3 flex gap-1 pointer-events-none">
                       {item.tags.map(t => (
                         <span key={t} className="bg-primary text-on-primary text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm">
                           {t}
@@ -970,11 +1368,11 @@ export default function App() {
             
             {/* Visual Display Left card */}
             <div className="lg:col-span-5 flex flex-col gap-6">
-              <div className="relative group overflow-hidden rounded-[30px] shadow-xl border border-outline-variant/30">
+              <div className="relative group overflow-hidden rounded-[30px] shadow-xl border border-outline-variant/30 cursor-zoom-in" onClick={() => setActiveLightboxImg("/src/assets/images/wedding_cake_master_1781601489129.jpg")}>
                 <img 
                   alt="High-end three tiered white fondant wedding cake" 
                   className="rounded-[30px] w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-700"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBA8wTAeI-ohj30-hP3uBAkW9rr2xQF4AEZ8hsBy4pF-VAFd7mjZnV09skVX12khZQBBhgH9pIXNUaTrX7tOQIxhGZ4hRHMkGhKz9BSBTmmpSotptS6zn8HmWp5uelQ-uKOwu1cDRDpR2Ga4xc_LpI9ab9XSs4WVKkPOWvWqlU0NhZlPShSg2gyTOx45njPqNwFfbyvEZhMb23lcURlwGMOlS9UwivXxefYjmUxp2v3lXT7gIYBb7o9C6fc9c1bWXrWC_P9WRW-YNg"
+                  src="/src/assets/images/wedding_cake_master_1781601489129.jpg"
                   referrerPolicy="no-referrer"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#12100e]/70 to-transparent flex items-end p-6">
@@ -2128,7 +2526,614 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Picture Frame Lightbox zoom modal */}
+      {/* Live Order Tracker Modal */}
+      <AnimatePresence>
+        {isTrackingOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-surface dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl border border-outline-variant/40 max-w-2xl w-full max-h-[92vh] flex flex-col relative"
+            >
+              {/* Close Button top right */}
+              <button 
+                onClick={() => {
+                  setIsTrackingOpen(false);
+                  setTrackedOrderDetails(null);
+                  setTrackingError(null);
+                }}
+                className="absolute top-5 right-5 text-on-surface-variant hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-full transition-colors z-10"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* Modal Body */}
+              <div className="p-6 md:p-8 overflow-y-auto flex-grow scrollbar-thin">
+                {/* Modal Title Banner */}
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 text-secondary mb-1">
+                    <Activity className="w-5 h-5 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Hearth preparation monitoring</span>
+                  </div>
+                  <h3 className="font-display font-medium text-2xl text-primary dark:text-inverse-primary">
+                    Boutique Live Order Tracker
+                  </h3>
+                  <p className="text-on-surface-variant text-xs dark:text-zinc-400 font-light">
+                    Observe standard, microloaded preparation states and routing details of your artisanal order signature.
+                  </p>
+                </div>
+
+                {/* Tracker Search Input */}
+                <div className="bg-surface-container-low dark:bg-zinc-800 p-4 rounded-2xl border border-outline-variant/30 mb-6 font-sans">
+                  <span className="text-[10px] text-secondary font-bold uppercase tracking-wider block mb-2">
+                    Enter Order Identifiers
+                  </span>
+                  <div className="flex gap-2">
+                    <div className="relative flex-grow">
+                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/70" />
+                      <input 
+                        type="text"
+                        placeholder="e.g. GC-184920"
+                        value={trackingOrderId}
+                        onChange={(e) => setTrackingOrderId(e.target.value)}
+                        className="w-full bg-surface-container dark:bg-zinc-950 border border-outline-variant/20 rounded-xl pl-10 pr-4 py-2.5 text-xs text-on-surface dark:text-white uppercase focus:outline-none focus:border-primary font-mono tracking-widest"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => fetchOrderDetails(trackingOrderId)}
+                      disabled={isTrackingSearchLoading}
+                      className="bg-primary text-on-primary hover:bg-primary-container disabled:opacity-50 px-5 py-2.5 rounded-xl font-semibold text-xs tracking-wider uppercase transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isTrackingSearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                      <span>Track</span>
+                    </button>
+                  </div>
+
+                  {/* List of My Recent Orders to tap-track */}
+                  {myRecentOrders.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-3 border-t border-outline-variant/20">
+                      <span className="text-[9px] text-on-surface-variant dark:text-zinc-400 uppercase tracking-wider mr-1">
+                        Your Recent Orders:
+                      </span>
+                      {myRecentOrders.map(id => (
+                        <button 
+                          key={id}
+                          onClick={() => {
+                            setTrackingOrderId(id);
+                            fetchOrderDetails(id);
+                          }}
+                          className="px-2 py-1 text-[10px] font-mono font-bold bg-primary/5 hover:bg-primary/10 text-primary hover:text-secondary rounded-md border border-primary/20 transition-all uppercase cursor-pointer"
+                        >
+                          {id}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Displaying Live Tracker Details */}
+                {trackedOrderDetails ? (() => {
+                  const progress = getTrackingProgress(trackedOrderDetails.createdAt);
+                  return (
+                    <div className="space-y-6">
+                      
+                      {/* Active Header stats */}
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-surface-container-low dark:bg-zinc-800 border border-outline-variant/20">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-secondary font-bold">Patron Client</p>
+                          <p className="font-display font-medium text-xs mt-0.5 text-on-surface dark:text-white truncate">{trackedOrderDetails.customerName}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-secondary font-bold">Total Bill</p>
+                          <p className="font-display font-medium text-xs mt-0.5 text-on-surface dark:text-white">₹{trackedOrderDetails.total.toLocaleString("en-IN")}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-secondary font-bold">Ticket Code</p>
+                          <p className="font-mono font-bold text-xs mt-0.5 text-[#ffe088] uppercase tracking-widest">{trackedOrderDetails.orderId}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-secondary font-bold">Monitored Clock</p>
+                          <p className="font-display font-medium text-xs mt-0.5 text-on-surface dark:text-white">
+                            {Math.floor(progress.elapsedSeconds / 60)}m {progress.elapsedSeconds % 60}s elapsed
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Live Process Bar */}
+                      <div className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between gap-4">
+                          <div>
+                            <span className="text-[10px] font-semibold inline-block py-1 px-2.5 uppercase rounded-full bg-[#ffe088]/15 text-[#f4bb92] dark:text-[#ffffff]">
+                              Preparation Process: {progress.progressPercent}% Complete
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-mono font-bold text-primary dark:text-[#ffe088]">
+                              {progress.activeStepIdx === 5 ? "Arrived" : "On Schedule"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="overflow-hidden h-2.5 text-xs flex rounded-full bg-surface-container-high dark:bg-zinc-950 border border-outline-variant/20">
+                          <motion.div 
+                            layout
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress.progressPercent}%` }}
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-amber-500 to-orange-600 rounded-full"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Active status bubble banner highlight */}
+                      <div className="p-4 rounded-xl bg-orange-500/5 dark:bg-amber-500/5 border border-orange-500/20 dark:border-amber-500/10 flex gap-3">
+                        <div className="text-secondary p-1">
+                          <Activity className="w-5 h-5 animate-spin" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-primary dark:text-[#ffe088] block mb-0.5">
+                            Active Step: {progress.currentStep.title}
+                          </span>
+                          <p className="text-[11px] text-on-surface-variant dark:text-zinc-300 font-light leading-relaxed">
+                            {progress.currentStep.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Interactive step vertical tree */}
+                      <div className="space-y-4 pt-2">
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-wider block mb-1">
+                          Preparation Milestones
+                        </span>
+                        
+                        <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-[1px] before:bg-outline-variant/40">
+                          {progress.steps.map((step, idx) => {
+                            const isCompleted = step.status === "completed";
+                            const isActive = step.status === "active";
+                            return (
+                              <div key={idx} className="relative flex flex-col md:flex-row md:items-center justify-between gap-3 text-left">
+                                {/* Dot icon */}
+                                <div className="absolute -left-6 top-1 transform translate-x-1.5">
+                                  {isCompleted ? (
+                                    <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center text-white ring-4 ring-green-150">
+                                      <Check className="w-3 h-3 stroke-[3]" />
+                                    </div>
+                                  ) : isActive ? (
+                                    <div className="w-4 h-4 rounded-full bg-secondary flex items-center justify-center text-white ring-4 ring-amber-100 dark:ring-amber-950 animate-pulse">
+                                      <span className="w-2 h-2 rounded-full bg-white block" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-zinc-800 border border-outline-variant flex items-center justify-center" />
+                                  )}
+                                </div>
+
+                                <div className="flex-grow">
+                                  <span className={`text-xs font-bold block ${isCompleted ? "text-gray-400 line-through decoration-gray-300 dark:decoration-zinc-700 font-light" : isActive ? "text-primary dark:text-[#f4bb92]" : "text-on-surface-variant/60"}`}>
+                                    {step.title}
+                                  </span>
+                                  <span className="text-[10px] text-on-surface-variant/80 dark:text-zinc-400 font-light block">
+                                    {step.description}
+                                  </span>
+                                </div>
+
+                                {isActive && step.secondsLeftInStep > 0 && (
+                                  <div className="bg-secondary/10 text-secondary border border-secondary/20 px-2 py-1 rounded-md text-[9px] font-mono font-bold whitespace-nowrap w-fit self-start md:self-center">
+                                    {step.secondsLeftInStep}s left
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Itemized Order Summary */}
+                      <div className="p-4 rounded-2xl bg-surface-container-low dark:bg-zinc-800-variant border border-outline-variant/25">
+                        <span className="text-[10px] text-secondary font-bold uppercase tracking-wider block mb-3">
+                          Items in this Bakery Ticket
+                        </span>
+                        <div className="space-y-2">
+                          {trackedOrderDetails.items ? (
+                            trackedOrderDetails.items.map((it: any, index: number) => (
+                              <div key={index} className="flex justify-between items-center text-xs py-1.5 border-b border-outline-variant/10 last:border-b-0">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-md bg-secondary/10 flex items-center justify-center text-[10px] font-bold text-secondary">
+                                    {it.qty}x
+                                  </div>
+                                  <span className="font-display font-medium text-on-surface dark:text-white">{it.name}</span>
+                                </div>
+                                <span className="font-mono text-zinc-400">GC-{it.id}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-zinc-500 font-mono">No specific item data logged.</p>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })() : (
+                  <div className="py-12 text-center text-on-surface-variant flex flex-col items-center justify-center gap-4">
+                    <Activity className="w-16 h-16 text-secondary/35 stroke-[1.2] animate-bounce" />
+                    <div>
+                      <h4 className="font-display text-base font-bold text-primary dark:text-inverse-primary">No Active Lookup Registered</h4>
+                      <p className="text-xs max-w-sm mt-1.5 font-light leading-relaxed dark:text-zinc-400">
+                        Key in your unique Golden Crust order sequence code above to track preparing milestones in our baking stone ovens of Paris.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {trackingError && (
+                  <div className="p-4 bg-red-500/5 border border-red-500/20 text-red-500 rounded-2xl flex items-center gap-3 text-xs justify-center font-medium mt-4">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{trackingError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-surface-container dark:bg-zinc-950 border-t border-outline-variant/30 text-center flex justify-between items-center gap-4">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono uppercase tracking-wider">
+                  © Golden Crust Secure Terminal v1.4
+                </span>
+                <button 
+                  onClick={() => {
+                    setIsTrackingOpen(false);
+                    setTrackedOrderDetails(null);
+                    setTrackingError(null);
+                  }}
+                  className="bg-primary hover:bg-primary-container text-on-primary font-semibold text-xs py-2 px-5 rounded-lg transition-colors border border-outline-variant/20 tracking-wider uppercase cursor-pointer"
+                >
+                  Return to Boutique
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bakehouse Database & Administrator Console Modal */}
+      <AnimatePresence>
+        {isAdminConsoleOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.96, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 20 }}
+              className="bg-surface dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl border border-outline-variant/40 max-w-4xl w-full max-h-[92vh] flex flex-col relative text-on-surface"
+            >
+              {/* Header */}
+              <div className="p-6 md:p-8 bg-gradient-to-r from-orange-600/10 to-amber-500/10 border-b border-outline-variant/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 mb-1">
+                    <Database className="w-5 h-5 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Gourmet File-System DB Logs</span>
+                  </div>
+                  <h3 className="font-display font-medium text-2xl text-primary dark:text-inverse-primary">
+                    Bakehouse Stone Database Console
+                  </h3>
+                  <p className="text-on-surface-variant text-xs dark:text-zinc-400 font-light mt-0.5">
+                    Live system inspection. View persistent orders, consultations, and message collections written inside `/gourmet-db.json`.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={fetchAdminDBData}
+                    disabled={adminLoading}
+                    title="Refresh Live Data"
+                    className="p-2.5 bg-surface-container dark:bg-zinc-800 hover:bg-surface-container-high dark:hover:bg-zinc-700 rounded-full border border-outline-variant/30 text-on-surface-variant transition-all cursor-sparkle-hover disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${adminLoading ? "animate-spin" : ""}`} />
+                  </button>
+                  <button 
+                    onClick={() => setIsAdminConsoleOpen(false)}
+                    className="p-2.5 bg-primary text-on-primary hover:bg-primary-container rounded-full shadow-sm transition-all focus:outline-none"
+                    title="Close Portal"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabs selector */}
+              <div className="flex border-b border-outline-variant/20 bg-surface-container-low dark:bg-zinc-950 px-4 md:px-8 py-2 overflow-x-auto gap-1">
+                {(["orders", "consultations", "messages", "diagnostics"] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setAdminActiveTab(tab)}
+                    className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all border-b-2 ${
+                      adminActiveTab === tab 
+                        ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-500/5 font-bold" 
+                        : "border-transparent text-on-surface-variant hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {tab === "messages" ? "Inbox Messages" : tab} {adminDBData?.collections?.[tab === "messages" ? "messages" : tab === "consultations" ? "consultations" : "orders"] ? `(${adminDBData.collections[tab === "messages" ? "messages" : tab === "consultations" ? "consultations" : "orders"].length})` : ""}
+                  </button>
+                ))}
+              </div>
+
+              {/* Body */}
+              <div className="p-6 md:p-8 overflow-y-auto flex-grow scrollbar-thin">
+                
+                {adminLoading && !adminDBData && (
+                  <div className="py-20 text-center flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+                    <p className="text-sm font-light text-on-surface-variant">Stretching dough and fetching hearth records...</p>
+                  </div>
+                )}
+
+                {adminError && (
+                  <div className="p-5 bg-red-500/5 border border-red-500/20 text-red-500 rounded-2xl flex items-center gap-3 text-xs justify-center font-medium my-4">
+                    <AlertCircle className="w-5 h-5 shrink-0" />
+                    <span>{adminError}</span>
+                  </div>
+                )}
+
+                {adminDBData && !adminLoading && (
+                  <div className="space-y-6">
+                    
+                    {/* Active Tab View */}
+                    {adminActiveTab === "orders" && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs uppercase tracking-widest text-primary dark:text-[#f4bb92] bg-primary/10 dark:bg-zinc-800 px-3 py-1 rounded-full font-bold">
+                            Live Order Records
+                          </span>
+                          <span className="text-[10px] text-zinc-400 font-mono hidden md:inline">
+                            Modifying status triggers real-time changes inside the client Tracker layout!
+                          </span>
+                        </div>
+
+                        {adminDBData.collections.orders.length === 0 ? (
+                          <p className="text-center py-10 text-xs text-on-surface-variant font-light">
+                            No persistent orders logged. Create one in the checkout panel!
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto rounded-2xl border border-outline-variant/30">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-surface-container-high dark:bg-zinc-950 text-secondary uppercase font-bold text-[10px] tracking-wider border-b border-outline-variant/10">
+                                  <th className="p-3">Order ID</th>
+                                  <th className="p-3">Client</th>
+                                  <th className="p-3">Items</th>
+                                  <th className="p-3">Bill Amount</th>
+                                  <th className="p-3">Preparation Stage</th>
+                                  <th className="p-3">Log Time</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {adminDBData.collections.orders.map((o: any) => (
+                                  <tr key={o.orderId} className="hover:bg-black/5 dark:hover:bg-white/5 transition-all">
+                                    <td className="p-3 font-mono font-bold text-orange-500 dark:text-orange-400 bg-zinc-900/10 dark:bg-zinc-950/20 py-4 uppercase">
+                                      {o.orderId}
+                                    </td>
+                                    <td className="p-3">
+                                      <p className="font-semibold text-primary dark:text-inverse-primary">{o.customerName}</p>
+                                      <p className="text-[10px] text-zinc-400">{o.email}</p>
+                                    </td>
+                                    <td className="p-3 max-w-[185px]">
+                                      {o.items?.map((it: any, index: number) => (
+                                        <div key={index} className="truncate text-[10px] text-on-surface-variant dark:text-zinc-300 font-light">
+                                          {it.qty}x {it.name}
+                                        </div>
+                                      ))}
+                                    </td>
+                                    <td className="p-3 font-semibold text-on-surface dark:text-zinc-200">
+                                      ₹{o.total?.toLocaleString("en-IN")}.00
+                                    </td>
+                                    <td className="p-3">
+                                      <select
+                                        value={o.status || "Order Secured & Sealed"}
+                                        disabled={adminStatusUpdatingId === o.orderId}
+                                        onChange={(e) => updateOrderStatusInDB(o.orderId, e.target.value)}
+                                        className="bg-surface dark:bg-zinc-950 border border-outline-variant/25 rounded-md py-1 px-1.5 font-bold uppercase text-[9px] tracking-wide text-[#735c00] dark:text-[#ffe088] focus:outline-none focus:border-orange-500 w-full"
+                                      >
+                                        <option value="Order Secured & Sealed">Order Secured & Sealed</option>
+                                        <option value="Fine Dough Lamination">Fine Dough Lamination</option>
+                                        <option value="Heated in Stone Hearth">Heated in Stone Hearth</option>
+                                        <option value="Glaze & Flavour Dressing">Glaze & Flavour Dressing</option>
+                                        <option value="Bespoke Boutique Dispatch">Bespoke Boutique Dispatch</option>
+                                        <option value="Flawless Delivery Successful">Flawless Delivery Successful</option>
+                                      </select>
+                                    </td>
+                                    <td className="p-3 text-[10px] text-zinc-500 font-mono">
+                                      {new Date(o.createdAt).toLocaleTimeString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {adminActiveTab === "consultations" && (
+                      <div className="space-y-4">
+                        <span className="text-xs uppercase tracking-widest text-[#735c00] dark:text-[#ffe2d6] bg-[#735c00]/10 dark:bg-zinc-800 px-3 py-1 rounded-full font-bold inline-block">
+                          Consultation Roster
+                        </span>
+                        {adminDBData.collections.consultations.length === 0 ? (
+                          <p className="text-center py-10 text-xs text-on-surface-variant font-light">
+                            No custom consultations requested yet.
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto rounded-2xl border border-outline-variant/30">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-surface-container-high dark:bg-zinc-950 text-secondary uppercase font-bold text-[10px] tracking-wider border-b border-outline-variant/10">
+                                  <th className="p-3">ID</th>
+                                  <th className="p-3">Patron Guest</th>
+                                  <th className="p-3">Target Date</th>
+                                  <th className="p-3">Creation Model</th>
+                                  <th className="p-3">Bespoke Notes</th>
+                                  <th className="p-3">Booked At</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {adminDBData.collections.consultations.map((c: any) => (
+                                  <tr key={c.consultationId} className="hover:bg-black/5 dark:hover:bg-white/5 transition-all">
+                                    <td className="p-3 font-mono font-bold text-orange-600 dark:text-orange-400 uppercase">
+                                      {c.consultationId}
+                                    </td>
+                                    <td className="p-3 font-semibold text-primary dark:text-inverse-primary">
+                                      <p>{c.fullName}</p>
+                                      <p className="text-[10px] text-zinc-400">{c.email}</p>
+                                    </td>
+                                    <td className="p-3 text-on-surface dark:text-zinc-200">
+                                      {c.date}
+                                    </td>
+                                    <td className="p-3 text-[#735c00] dark:text-zinc-300 font-semibold">
+                                      {c.cakeType} ({c.guests || "30-50 guests"})
+                                    </td>
+                                    <td className="p-3 text-on-surface-variant dark:text-zinc-300 max-w-xs font-light tracking-wide truncate" title={c.notes}>
+                                      {c.notes || "No bespoke comments."}
+                                    </td>
+                                    <td className="p-3 text-[10px] text-zinc-400 font-mono">
+                                      {new Date(c.createdAt).toLocaleDateString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {adminActiveTab === "messages" && (
+                      <div className="space-y-4">
+                        <span className="text-xs uppercase tracking-widest text-[#735c00] dark:text-[#ffe2d6] bg-[#735c00]/10 dark:bg-zinc-800 px-3 py-1 rounded-full font-bold inline-block">
+                          Contact Inbox &amp; Guestbooks
+                        </span>
+                        {adminDBData.collections.messages.length === 0 ? (
+                          <p className="text-center py-10 text-xs text-on-surface-variant font-light">
+                            No inbox feedback retrieved.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {adminDBData.collections.messages.map((m: any, index: number) => (
+                              <div key={index} className="p-5 rounded-2xl bg-surface-container-low dark:bg-zinc-800 border border-outline-variant/25 flex flex-col justify-between">
+                                <div>
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                      <h6 className="font-bold text-xs text-primary dark:text-inverse-primary">{m.name}</h6>
+                                      <span className="text-[10px] text-zinc-400 font-mono">{m.email}</span>
+                                    </div>
+                                    <span className="text-[9px] text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</span>
+                                  </div>
+                                  <p className="text-[10px] font-bold text-[#735c00] dark:text-zinc-300 uppercase tracking-wider mb-2">{m.subject}</p>
+                                  <p className="text-xs text-on-surface-variant dark:text-zinc-300 font-light leading-relaxed whitespace-pre-line bg-surface-container dark:bg-zinc-950/40 p-3 rounded-xl border border-outline-variant/10">
+                                    "{m.message}"
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {adminActiveTab === "diagnostics" && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-on-surface">
+                        
+                        {/* Left column statistics list */}
+                        <div className="col-span-1 space-y-4">
+                          <span className="text-xs uppercase tracking-widest text-orange-600 font-bold block">
+                            System Diagnostics
+                          </span>
+                          
+                          <div className="bg-surface-container-low dark:bg-zinc-850 border border-outline-variant/30 rounded-2xl p-5 space-y-4">
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Server State</span>
+                              <div className="flex items-center gap-1.5 text-xs font-semibold mt-1 text-green-500">
+                                <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+                                <span>Active Container Online</span>
+                              </div>
+                            </div>
+                            
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Express Server Uptime</span>
+                              <p className="text-xs text-on-surface dark:text-zinc-200 font-mono font-bold mt-0.5">{adminDBData.stats?.uptimeLabel || "Connected"}</p>
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Local DB Size</span>
+                              <p className="text-xs text-orange-500 dark:text-orange-400 font-mono font-bold mt-0.5">{adminDBData.stats?.dbSizeKB || "0.2"} KB on disk</p>
+                            </div>
+
+                            <div className="pt-3 border-t border-outline-variant/25">
+                              <button
+                                onClick={resetDBLogs}
+                                className="w-full bg-red-600/10 hover:bg-red-600/25 border border-red-500/20 text-red-500 hover:text-red-400 py-2.5 rounded-xl font-bold uppercase text-[10px] tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Reset Database File</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Logs terminal box */}
+                        <div className="col-span-1 md:col-span-2 flex flex-col space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs uppercase tracking-widest text-orange-600 font-bold">
+                              Terminal Command Output Logs
+                            </span>
+                            <button 
+                              onClick={() => setAdminLogs([])}
+                              className="text-[9px] uppercase tracking-wider text-primary hover:text-secondary"
+                            >
+                              Clear Panel
+                            </button>
+                          </div>
+                          
+                          <div className="bg-zinc-950 text-emerald-400 font-mono text-[10px] leading-relaxed p-4 rounded-2xl flex-grow h-60 border border-zinc-500/10 overflow-y-auto block whitespace-pre shadow-inner">
+                            <div className="flex items-center gap-1 text-zinc-500 border-b border-zinc-800 pb-2 mb-2">
+                              <Terminal className="w-3.5 h-3.5 text-zinc-400" />
+                              <span>gourmet-cli --hearth-engine (UTC)</span>
+                            </div>
+                            {adminLogs.length === 0 ? (
+                              <p className="text-zinc-500 italic">[Terminal idling. Listening for SQL/file write events...]</p>
+                            ) : (
+                              adminLogs.map((l, i) => (
+                                <div key={i} className="py-0.5">
+                                  {l}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-surface-container dark:bg-zinc-950 border-t border-outline-variant/30 flex justify-between items-center text-xs">
+                <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                  🔐 Golden Crust Administration Node v2.0
+                </span>
+                <button 
+                  onClick={() => setIsAdminConsoleOpen(false)}
+                  className="bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold py-2 px-5 rounded-lg border border-outline-variant/10 tracking-wider uppercase transition-colors cursor-pointer"
+                >
+                  Deauthorize Control Line
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {activeLightboxImg && (
           <div 

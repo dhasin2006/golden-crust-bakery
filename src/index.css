@@ -2,36 +2,36 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Poppins:wght@300;400;500;600;700&display=swap');
 
 @theme {
-  --color-primary: #6f4627;
+  --color-primary: #831a33; /* Luxurious Royal Crimson Burgundy */
   --color-on-primary: #ffffff;
-  --color-primary-container: #8b5e3c;
-  --color-on-primary-container: #ffe3d1;
-  --color-inverse-primary: #f4bb92;
-  --color-secondary: #735c00;
+  --color-primary-container: #a62a49; /* Rich Rose Wine */
+  --color-on-primary-container: #ffebed;
+  --color-inverse-primary: #ffb3c1;
+  --color-secondary: #ad8523; /* Majestic Antique Gold */
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #fed65b;
-  --color-on-secondary-container: #745c00;
-  --color-tertiary: #67493c;
+  --color-secondary-container: #ffd97d; /* Champagne Gold Accent */
+  --color-on-secondary-container: #634a00;
+  --color-tertiary: #4a3e3d;
   --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #816153;
-  --color-on-tertiary-container: #ffe2d6;
-  --color-background: #fff8f1;
-  --color-on-background: #1e1b17;
-  --color-surface: #fff8f1;
-  --color-surface-dim: #dfd9d1;
-  --color-surface-bright: #fff8f1;
+  --color-tertiary-container: #615251;
+  --color-on-tertiary-container: #ffe5e3;
+  --color-background: #fffafa; /* Luxurious Rose Champagne Alabaster */
+  --color-on-background: #251618; /* Deep rich cherry-bark black */
+  --color-surface: #fffafa;
+  --color-surface-dim: #ebdcdb;
+  --color-surface-bright: #fffafa;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f9f3eb;
-  --color-surface-container: #f4ede5;
-  --color-surface-container-high: #eee7df;
-  --color-surface-container-highest: #e8e1da;
-  --color-on-surface: #1e1b17;
-  --color-on-surface-variant: #51443c;
-  --color-inverse-surface: #33302b;
-  --color-inverse-on-surface: #f7f0e8;
-  --color-outline: #83746b;
-  --color-outline-variant: #d5c3b8;
-  --color-surface-tint: #805533;
+  --color-surface-container-low: #fbf1f1;
+  --color-surface-container: #f7e8e8;
+  --color-surface-container-high: #ebdcdb;
+  --color-surface-container-highest: #decbcb;
+  --color-on-surface: #251618;
+  --color-on-surface-variant: #5f4b4e;
+  --color-inverse-surface: #3b2c2e;
+  --color-inverse-on-surface: #fbeeee;
+  --color-outline: #8c7376;
+  --color-outline-variant: #dfc8ca;
+  --color-surface-tint: #a62a49;
   
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Playfair Display", Georgia, serif;
@@ -57,6 +57,28 @@ body {
   background-color: var(--color-background);
   color: var(--color-on-background);
   overflow-x: hidden;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/src/assets/images/luxury_gold_weave_bg_1781602092609.jpg');
+  background-repeat: repeat;
+  background-size: 380px;
+  opacity: 0.14; /* Elegant subtle watermark alignment */
+  pointer-events: none;
+  z-index: -10;
+  transition: opacity 0.3s;
+}
+
+.dark body::before {
+  opacity: 0.04; /* Highly dark-adapted watermark */
+  filter: invert(1);
 }
 
 .font-display {
